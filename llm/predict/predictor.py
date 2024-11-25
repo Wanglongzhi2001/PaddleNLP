@@ -1043,24 +1043,19 @@ class DygraphBlockInferencePredictor(BlockInferencePredictorMixin):
 
         # whether speculative decoding
         if self.proposer is None:
-            read_res_process = mp.Process(
-                target=llm_utils.read_res, args=[self.model_name_or_path, tensor_queue, result_queue, done_event]
-            )
-            if self.tensor_parallel_rank == 0:
-                read_res_process.start()
-
-            output_tensor = paddle.full(shape=[MAX_BSZ + 2, 1], fill_value=2, dtype="int64").cpu()
+            read_res_func = llm_utils.read_res
+            output_tensor_shape = [MAX_BSZ + 2, 1]
         else:
-            read_res_process = mp.Process(
-                target=llm_utils.speculate_read_res,
-                args=[self.model_name_or_path, tensor_queue, result_queue, done_event],
-            )
-            if self.tensor_parallel_rank == 0:
-                read_res_process.start()
+            read_res_func = llm_utils.speculate_read_res
+            output_tensor_shape = [SPECULATE_MAX_BSZ * MAX_DRAFT_TOKENS + SPECULATE_MAX_BSZ + 2, 1]
 
-            output_tensor = paddle.full(
-                shape=[SPECULATE_MAX_BSZ * MAX_DRAFT_TOKENS + SPECULATE_MAX_BSZ + 2, 1], fill_value=2, dtype="int64"
-            ).cpu()
+        read_res_process = mp.Process(
+            target=read_res_func, args=[self.model_name_or_path, tensor_queue, result_queue, done_event]
+        )
+        if self.tensor_parallel_rank == 0:
+            read_res_process.start()
+
+        output_tensor = paddle.full(shape=output_tensor_shape, fill_value=2, dtype="int64").cpu()
 
         tensor_queue.put(output_tensor)
         if self.tensor_parallel_rank == 0:
@@ -1205,24 +1200,19 @@ class StaticBlockInferencePredictor(BlockInferencePredictorMixin):
 
         # whether speculative decoding
         if self.proposer is None:
-            read_res_process = mp.Process(
-                target=llm_utils.read_res, args=[self.model_name_or_path, tensor_queue, result_queue, done_event]
-            )
-
-            if self.tensor_parallel_rank == 0:
-                read_res_process.start()
-            output_tensor = paddle.full(shape=[MAX_BSZ + 2, 1], fill_value=2, dtype="int64").cpu()
+            read_res_func = llm_utils.read_res
+            output_tensor_shape = [MAX_BSZ + 2, 1]
         else:
-            read_res_process = mp.Process(
-                target=llm_utils.speculate_read_res,
-                args=[self.model_name_or_path, tensor_queue, result_queue, done_event],
-            )
+            read_res_func = llm_utils.speculate_read_res
+            output_tensor_shape = [SPECULATE_MAX_BSZ * MAX_DRAFT_TOKENS + SPECULATE_MAX_BSZ + 2, 1]
 
-            if self.tensor_parallel_rank == 0:
-                read_res_process.start()
-            output_tensor = paddle.full(
-                shape=[SPECULATE_MAX_BSZ * MAX_DRAFT_TOKENS + SPECULATE_MAX_BSZ + 2, 1], fill_value=2, dtype="int64"
-            ).cpu()
+        read_res_process = mp.Process(
+            target=read_res_func, args=[self.model_name_or_path, tensor_queue, result_queue, done_event]
+        )
+        if self.tensor_parallel_rank == 0:
+            read_res_process.start()
+
+        output_tensor = paddle.full(shape=output_tensor_shape, fill_value=2, dtype="int64").cpu()
 
         tensor_queue.put(output_tensor)
         if self.tensor_parallel_rank == 0:
