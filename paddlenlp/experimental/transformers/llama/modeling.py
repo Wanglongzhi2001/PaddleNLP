@@ -1420,64 +1420,26 @@ class LlamaBlockInferenceModel(LlamaInferenceModel):
 
         seq_lens_this_time = kwargs.get("seq_lens_this_time", None)
         rope_emb = kwargs.get("rope_emb", None)
-        ids_remove_padding, padding_offset, cum_offsets, cu_seqlens_q, cu_seqlens_k = self.remove_padding(
-            input_ids, seq_lens_this_time
-        )
-        kwargs["cu_seqlens_q"] = cu_seqlens_q
-        kwargs["cu_seqlens_k"] = cu_seqlens_k
-        kwargs["padding_offsets"] = padding_offset
-        kwargs["max_input_length"] = self.max_seq_len
-
-        inputs_embeds = self.embed_tokens(ids_remove_padding)
-
-        with dy2st_nocheck_guard_context():
-            hidden_states, _ = self.transformer_block(
-                input_ids=input_ids,
-                src=inputs_embeds,
-                cum_offsets=cum_offsets,
-                attn_mask=attention_mask,
-                caches=caches,
-                pre_caches=pre_caches,
-                rotary_embs=rope_emb,
-                **kwargs,
-            )
-        hidden_states = self.norm(hidden_states)
-
-        return BaseModelOutputWithPastAndCrossAttentions(
-            last_hidden_state=hidden_states,
-            past_key_values=None,
-            hidden_states=None,
-            attentions=None,
-        )
-
-
-@register_base_model
-class LlamaSpeculateInferenceModel(LlamaBlockInferenceModel):
-    def forward(
-        self,
-        input_ids=None,
-        attention_mask=None,
-        inputs_embeds=None,
-        caches=None,
-        pre_caches=None,
-        output_attentions=False,
-        output_hidden_states=None,
-        return_dict=False,
-        draft_tokens=None,
-        **kwargs,
-    ):
-        seq_lens_this_time = kwargs.get("seq_lens_this_time", None)
+        draft_tokens = kwargs.get("draft_tokens", None)
         seq_lens_encoder = kwargs.get("seq_lens_encoder", None)
-        rope_emb = kwargs.get("rope_emb", None)
-        ids_remove_padding, padding_offset, cum_offsets, cu_seqlens_q, cu_seqlens_k = self.remove_padding(
-            input_ids, seq_lens_this_time, draft_tokens, seq_lens_encoder
-        )
+
+        # wether speculative decoding or not
+        if draft_tokens is None:
+            ids_remove_padding, padding_offset, cum_offsets, cu_seqlens_q, cu_seqlens_k = self.remove_padding(
+                input_ids, seq_lens_this_time
+            )
+        else:
+            ids_remove_padding, padding_offset, cum_offsets, cu_seqlens_q, cu_seqlens_k = self.remove_padding(
+                input_ids, seq_lens_this_time, draft_tokens, seq_lens_encoder
+            )
+
         kwargs["cu_seqlens_q"] = cu_seqlens_q
         kwargs["cu_seqlens_k"] = cu_seqlens_k
         kwargs["padding_offsets"] = padding_offset
         kwargs["max_input_length"] = self.max_seq_len
 
         inputs_embeds = self.embed_tokens(ids_remove_padding)
+
         with dy2st_nocheck_guard_context():
             hidden_states, _ = self.transformer_block(
                 input_ids=input_ids,
@@ -1978,7 +1940,7 @@ class LlamaForCausalLMSpeculateInferenceModel(LlamaForCausalLMBlockInferenceMode
         self.max_seq_len = config.max_seq_len
         self.max_candidate_len = config.speculate_max_candidate_len
         self.verify_window = config.speculate_verify_window
-        self.llama = LlamaSpeculateInferenceModel(config)
+        self.llama = LlamaBlockInferenceModel(config)
         self.lm_head = LlamaLMHead(config)
 
     def prepare_inputs_for_generation(self, **kwargs):
