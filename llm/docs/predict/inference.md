@@ -114,11 +114,11 @@ PaddleNLP 提供了多种量化策略，支持Weight Only INT8及INT4推理，�
 
 - `speculate_max_draft_token_num`: 投机解码算法中每轮产生的最大 draft tokens 数目，默认值为 1。
 
-- `speculate_max_ngram_size`: ngram 匹配 draft tokens 时的最大窗口大小，默认值为`1`。inference_with_reference 算法中会先从 prompt 中使用 ngram 窗口滑动匹配 draft tokens，窗口大小和输入输出重叠程度共同决定了产生 draft tokens 的开销从而影响 inference_with_reference 算法的加速效果。
+- `speculate_max_ngram_size`: n-gram 匹配 draft tokens 时的最大窗口大小，默认值为`1`。inference_with_reference 算法中会先从 prompt 中使用 ngram 窗口滑动匹配 draft tokens，窗口大小和输入输出重叠程度共同决定了产生 draft tokens 的开销从而影响 inference_with_reference 算法的加速效果。
 
-- `speculate_verify_window`: 投机解码 verify 策略默认采用 TopP + TopK 验证中的 K，默认值为`2`。
+- `speculate_verify_window`: 投机解码 verify 策略默认采用 TopP + window verify 中的 window 大小，默认值为`2`。更多有关 TopP + window verify 的详细介绍参考[投机解码教程](./speculative_decoding.md)。
 
-- `speculate_max_candidate_len`: 产生的最大候选 tokens 数目，根据候选 tokens 与 draft tokens 比较来进行 verify，默认值为`5`。
+- `speculate_max_candidate_len`: 产生的最大候选 tokens 数目，根据候选 tokens 与 draft tokens 比较来进行 verify(仅在 TopP + window verify时生效)，默认值为`5`。
 
 ### 3.5 解码策略参数
 
