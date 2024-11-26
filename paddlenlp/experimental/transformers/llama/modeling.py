@@ -19,17 +19,12 @@ from functools import partial
 
 import numpy as np
 import paddle
-import paddle.nn.functional as F
 from paddle import nn
 from paddle.distributed import fleet
 from paddle.nn.quant import weight_quantize
 from paddlenlp_ops import (
-    save_output,
     speculate_get_output_padding_offset,
     speculate_get_seq_lens_output,
-    speculate_set_value_by_flags_and_idx,
-    speculate_verify_and_update,
-    top_p_candidates,
 )
 
 from paddlenlp.experimental.model_utils import (
@@ -2051,110 +2046,6 @@ class LlamaForCausalLMSpeculateInferenceModel(LlamaForCausalLMBlockInferenceMode
         )
 
         return logits
-
-    def sample(
-        self,
-        eos_token_id,
-        top_k,
-        top_p,
-        penalty_score,
-        frequency_score,
-        presence_score,
-        temperature=None,
-        min_tokens_to_keep=1,
-        **model_kwargs
-    ):
-        def _forward_(**args):
-            model_inputs = self.prepare_inputs_for_generation(**args)
-            return self(**model_inputs)
-
-        def _post_process_(
-            outputs,
-            top_k,
-            top_p,
-            penalty_score,
-            frequency_score,
-            presence_score,
-            temperature,
-            model_kwargs,
-        ):
-            logits = paddle.cast(outputs, paddle.float32)
-
-            # TODO(Wanglongzhi2001): get_token_penalty_multi_scores_v2 don't support seqlen > 1
-
-            # sample
-            probs = F.softmax(logits)
-            verify_scores, verify_tokens, actual_candidate_len = top_p_candidates(
-                probs, top_p, model_kwargs["output_padding_offset"], self.max_candidate_len, self.max_seq_len
-            )  # [token_num, max_candidate_len]
-
-            # Speculate Verify And Update
-            speculate_verify_and_update(
-                model_kwargs["accept_tokens"],
-                model_kwargs["accept_num"],
-                model_kwargs["step_idx"],
-                model_kwargs["seq_lens_encoder"],
-                model_kwargs["seq_lens_decoder"],
-                model_kwargs["stop_flags"],
-                model_kwargs["not_need_stop"],
-                model_kwargs[
-                    "draft_tokens"
-                ],  # Both input and output, need to write the last 1 token accepted to position 0.
-                model_kwargs["seq_lens_this_time"],
-                verify_tokens,
-                verify_scores,
-                model_kwargs["max_dec_len"],
-                eos_token_id,
-                model_kwargs["is_block_step"],
-                model_kwargs["output_cum_offsets"],
-                actual_candidate_len,
-                model_kwargs["actual_draft_token_num"],
-                top_p,
-                self.max_seq_len,
-                self.verify_window,
-                True,  # enable_topp
-            )
-
-            # Since the output token length is not bsz anymore, we need to change the token_num
-            # in the msg queue and write accept_num tokens into the msg queue.
-            save_output(
-                model_kwargs["accept_tokens"],
-                model_kwargs["not_need_stop"],
-                model_kwargs["accept_num"],
-                self.config.tensor_parallel_rank,
-            )
-
-            # If seq_lens_decoder is 0 (means stop), accept_num should be set to 0
-            model_kwargs["accept_num"][model_kwargs["seq_lens_decoder"] == 0] = 0
-
-            # Update pre_ids through accept tokens
-            speculate_set_value_by_flags_and_idx(
-                model_kwargs["pre_ids"],
-                model_kwargs["accept_tokens"],
-                model_kwargs["accept_num"],
-                model_kwargs["stop_flags"],
-                model_kwargs["seq_lens_this_time"],
-                model_kwargs["seq_lens_encoder"],
-                model_kwargs["seq_lens_decoder"],
-                model_kwargs["step_idx"],
-            )
-
-        # # Prepare output padding offset
-        output_padding_offset, output_cum_offsets = self.get_output_padding_offset(
-            model_kwargs["seq_lens_this_time"], model_kwargs["seq_lens_encoder"], model_kwargs["seq_lens_decoder"]
-        )
-        model_kwargs["output_padding_offset"] = output_padding_offset
-        model_kwargs["output_cum_offsets"] = output_cum_offsets
-
-        # LLM
-        outputs = _forward_(**model_kwargs)
-
-        # Post-process
-        _post_process_(
-            outputs, top_k, top_p, penalty_score, frequency_score, presence_score, temperature, model_kwargs
-        )
-
-        return top_p
 
 
 class LlamaForMiniGPT4InferenceModel(LlamaForCausalLMInferenceModel):
