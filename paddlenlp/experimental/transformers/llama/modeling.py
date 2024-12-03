@@ -615,10 +615,8 @@ class LlamaInferenceModel(LlamaPretrainedModel):
             ]
 
         speculate_config = SpeculateConfig(
-            speculate_method=config.speculate_method if hasattr(config, "speculate_method") else None,
-            speculate_max_draft_token_num=config.speculate_max_draft_token_num
-            if hasattr(config, "speculate_max_draft_token_num")
-            else 1,
+            speculate_method=config.get("speculate_method", None),
+            speculate_max_draft_token_num=config.get("speculate_max_draft_token_num", 5),
         )
         transformer_config = FusedMultiTransformerConfig(
             embed_dim=self.hidden_size,
