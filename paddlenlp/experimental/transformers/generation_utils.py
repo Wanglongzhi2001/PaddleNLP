@@ -667,7 +667,7 @@ class GenerationBlockInferenceModel(GenerationMixin):
             logits = paddle.cast(outputs, paddle.float32)
 
             # TODO(Wanglongzhi2001): token_penalty of speculative decoding
-            if model_kwargs.get("draft_tokens", None) is None:
+            if speculate_method is None:
                 from paddlenlp_ops import set_preids_token_penalty_multi_scores
 
                 set_preids_token_penalty_multi_scores(
@@ -694,7 +694,7 @@ class GenerationBlockInferenceModel(GenerationMixin):
             from paddlenlp_ops import save_output
 
             # whether speculative decoding
-            if model_kwargs.get("draft_tokens", None) is None:
+            if speculate_method is None:
 
                 # compute next_tokens
                 if use_faster_top_p_sampling():
@@ -728,7 +728,7 @@ class GenerationBlockInferenceModel(GenerationMixin):
                 save_output(
                     next_tokens,
                     model_kwargs["not_need_stop"],
-                    model_kwargs.get("accept_tokens", None),  # only initialized in speculative decoding
+                    model_kwargs.get("accept_num", None),  # only initialized in speculative decoding
                     self.config.tensor_parallel_rank,
                 )
                 return next_tokens
@@ -792,7 +792,8 @@ class GenerationBlockInferenceModel(GenerationMixin):
                     model_kwargs["step_idx"],
                 )
 
-        if model_kwargs.get("draft_tokens", None) is not None:
+        speculate_method = self.config.speculate_method if hasattr(self.config, "speculate_method") else None
+        if speculate_method is not None:
             # Prepare output padding offset
             output_padding_offset, output_cum_offsets = self.get_output_padding_offset(
                 model_kwargs["seq_lens_this_time"], model_kwargs["seq_lens_encoder"], model_kwargs["seq_lens_decoder"]
