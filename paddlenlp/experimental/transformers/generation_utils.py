@@ -792,7 +792,7 @@ class GenerationBlockInferenceModel(GenerationMixin):
                     model_kwargs["step_idx"],
                 )
 
-        speculate_method = self.config.speculate_method if hasattr(self.config, "speculate_method") else None
+        speculate_method = self.config.get("speculate_method", None)
         if speculate_method is not None:
             # Prepare output padding offset
             output_padding_offset, output_cum_offsets = self.get_output_padding_offset(
