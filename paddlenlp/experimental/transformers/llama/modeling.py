@@ -22,10 +22,6 @@ import paddle
 from paddle import nn
 from paddle.distributed import fleet
 from paddle.nn.quant import weight_quantize
-from paddlenlp_ops import (
-    speculate_get_output_padding_offset,
-    speculate_get_seq_lens_output,
-)
 
 from paddlenlp.experimental.model_utils import (
     ActScalesLoader,
@@ -76,7 +72,6 @@ __all__ = [
     "LlamaForCausalLMInferenceModel",
     "LlamaForCausalLMAvxInferenceModel",
     "LlamaForCausalLMBlockInferenceModel",
-    "LlamaForCausalLMSpeculateInferenceModel",
     "LlamaForMiniGPT4InferenceModel",
 ]
 
@@ -1421,7 +1416,7 @@ class LlamaBlockInferenceModel(LlamaInferenceModel):
         draft_tokens = kwargs.get("draft_tokens", None)
         seq_lens_encoder = kwargs.get("seq_lens_encoder", None)
 
-        # wether speculative decoding or not
+        # whether speculative decoding or not
         if draft_tokens is None:
             ids_remove_padding, padding_offset, cum_offsets, cu_seqlens_q, cu_seqlens_k = self.remove_padding(
                 input_ids, seq_lens_this_time
@@ -1731,6 +1726,10 @@ class LlamaForCausalLMBlockInferenceModel(GenerationBlockInferenceModel, LlamaPr
 
     def __init__(self, config):
         super().__init__(config)
+        self.max_candidate_len = config.get("speculate_max_candidate_len", 5)
+        self.verify_window = config.get("speculate_verify_window", 2)
+        self.max_seq_len = config.max_seq_len
+
         self.llama = LlamaBlockInferenceModel(config)
         self.lm_head = LlamaLMHead(config)
 
@@ -1866,6 +1865,11 @@ class LlamaForCausalLMBlockInferenceModel(GenerationBlockInferenceModel, LlamaPr
         v_quant_scales = kwargs.get("v_quant_scales", None)
         k_dequant_scales = kwargs.get("k_dequant_scales", None)
         v_dequant_scales = kwargs.get("v_dequant_scales", None)
+
+        # speculative decoding related parameters
+        draft_tokens = kwargs.get("draft_tokens", None)
+        output_padding_offset = kwargs.get("output_padding_offset", None)
+
         model_inputs = {
             "input_ids": input_ids,
             "src_mask": src_mask,
@@ -1880,88 +1884,10 @@ class LlamaForCausalLMBlockInferenceModel(GenerationBlockInferenceModel, LlamaPr
             "v_quant_scales": v_quant_scales,
             "k_dequant_scales": k_dequant_scales,
             "v_dequant_scales": v_dequant_scales,
+            "draft_tokens": draft_tokens,
+            "output_padding_offset": output_padding_offset,
         }
         return model_inputs
-
-    def forward(
-        self,
-        input_ids,
-        src_mask=None,
-        pre_caches=None,
-        caches=None,
-        seq_lens_this_time=None,
-        seq_lens_encoder=None,
-        seq_lens_decoder=None,
-        rope_emb=None,
-        block_tables=None,
-        k_quant_scales=None,
-        v_quant_scales=None,
-        k_dequant_scales=None,
-        v_dequant_scales=None,
-    ):
-        outputs = self.llama(
-            input_ids,
-            src_mask=src_mask,
-            caches=caches,
-            rope_emb=rope_emb,
-            block_tables=block_tables,
-            pre_caches=pre_caches,
-            seq_lens_this_time=seq_lens_this_time,
-            seq_lens_encoder=seq_lens_encoder,
-            seq_lens_decoder=seq_lens_decoder,
-            k_quant_scales=k_quant_scales,
-            v_quant_scales=v_quant_scales,
-            k_dequant_scales=k_dequant_scales,
-            v_dequant_scales=v_dequant_scales,
-        )
-
-        hidden_states = outputs[0]
-        logits = self.lm_head(
-            hidden_states,
-            tensor_parallel_output=False,
-        )
-
-        return logits
-
-    @paddle.no_grad()
-    def set_state_dict(self, state_dict):
-        if "lm_head.weight" in state_dict:
-            self.lm_head.weight.set_value(
-                paddle.to_tensor(state_dict["lm_head.weight"]).cast(self.lm_head.weight.dtype)
-            )
-        self.llama.set_state_dict({k: state_dict[k] for k in state_dict.keys()})
-
-
-class LlamaForCausalLMSpeculateInferenceModel(LlamaForCausalLMBlockInferenceModel):
-    def __init__(self, config):
-        LlamaPretrainedModel.__init__(self, config)
-        self.max_seq_len = config.max_seq_len
-        self.max_candidate_len = config.speculate_max_candidate_len
-        self.verify_window = config.speculate_verify_window
-        self.llama = LlamaBlockInferenceModel(config)
-        self.lm_head = LlamaLMHead(config)
-
-    def prepare_inputs_for_generation(self, **kwargs):
-        model_inputs = super().prepare_inputs_for_generation(**kwargs)
-        draft_tokens = kwargs["draft_tokens"]
-        model_inputs["draft_tokens"] = draft_tokens
-        output_padding_offset = kwargs["output_padding_offset"]
-        model_inputs["output_padding_offset"] = output_padding_offset
-
-        return model_inputs
-
-    def get_output_padding_offset(self, seq_lens_this_time, seq_lens_encoder, seq_lens_decoder):
-        """
-        In the senerio of speculate decoding, the length of output token after rebuild_padding is no longer bsz.
-        So we need to calculate the output_padding_offset after rebuild_padding.
-        """
-        seq_lens_output = speculate_get_seq_lens_output(seq_lens_this_time, seq_lens_encoder, seq_lens_decoder)
-        out_token_num = paddle.sum(seq_lens_output)
-        output_cum_offsets_tmp = paddle.cumsum(self.max_seq_len - seq_lens_output)
-        output_padding_offset, output_cum_offsets = speculate_get_output_padding_offset(
-            output_cum_offsets_tmp, out_token_num, seq_lens_output, self.max_seq_len
-        )
-        return output_padding_offset, output_cum_offsets
 
     def forward(
         self,
@@ -2006,6 +1932,14 @@ class LlamaForCausalLMSpeculateInferenceModel(LlamaForCausalLMBlockInferenceMode
         )
 
         return logits
+
+    @paddle.no_grad()
+    def set_state_dict(self, state_dict):
+        if "lm_head.weight" in state_dict:
+            self.lm_head.weight.set_value(
+                paddle.to_tensor(state_dict["lm_head.weight"]).cast(self.lm_head.weight.dtype)
+            )
+        self.llama.set_state_dict({k: state_dict[k] for k in state_dict.keys()})
 
 
 class LlamaForMiniGPT4InferenceModel(LlamaForCausalLMInferenceModel):

@@ -555,6 +555,24 @@ class GenerationBlockInferenceModel(GenerationMixin):
             seq_len = encoder_output.shape[1]
         return paddle.ones([batch_size, seq_len], dtype="int64") * bos_token_id
 
+    def get_output_padding_offset(self, seq_lens_this_time, seq_lens_encoder, seq_lens_decoder):
+        """
+        In the senerio of speculate decoding, the length of output token after rebuild_padding is no longer bsz.
+        So we need to calculate the output_padding_offset after rebuild_padding.
+        """
+        from paddlenlp_ops import (
+            speculate_get_output_padding_offset,
+            speculate_get_seq_lens_output,
+        )
+
+        seq_lens_output = speculate_get_seq_lens_output(seq_lens_this_time, seq_lens_encoder, seq_lens_decoder)
+        out_token_num = paddle.sum(seq_lens_output)
+        output_cum_offsets_tmp = paddle.cumsum(self.max_seq_len - seq_lens_output)
+        output_padding_offset, output_cum_offsets = speculate_get_output_padding_offset(
+            output_cum_offsets_tmp, out_token_num, seq_lens_output, self.max_seq_len
+        )
+        return output_padding_offset, output_cum_offsets
+
     @paddle.no_grad()
     def generate(
         self,
@@ -667,7 +685,7 @@ class GenerationBlockInferenceModel(GenerationMixin):
             logits = paddle.cast(outputs, paddle.float32)
 
             # TODO(Wanglongzhi2001): token_penalty of speculative decoding
-            if speculate_method is None:
+            if not is_speculative_decoding:
                 from paddlenlp_ops import set_preids_token_penalty_multi_scores
 
                 set_preids_token_penalty_multi_scores(
@@ -694,7 +712,7 @@ class GenerationBlockInferenceModel(GenerationMixin):
             from paddlenlp_ops import save_output
 
             # whether speculative decoding
-            if speculate_method is None:
+            if not is_speculative_decoding:
 
                 # compute next_tokens
                 if use_faster_top_p_sampling():
@@ -792,8 +810,8 @@ class GenerationBlockInferenceModel(GenerationMixin):
                     model_kwargs["step_idx"],
                 )
 
-        speculate_method = self.config.get("speculate_method", None)
-        if speculate_method is not None:
+        is_speculative_decoding = model_kwargs.get("draft_tokens", None) is not None
+        if is_speculative_decoding:
             # Prepare output padding offset
             output_padding_offset, output_cum_offsets = self.get_output_padding_offset(
                 model_kwargs["seq_lens_this_time"], model_kwargs["seq_lens_encoder"], model_kwargs["seq_lens_decoder"]
