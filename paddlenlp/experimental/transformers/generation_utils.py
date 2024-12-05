@@ -796,8 +796,27 @@ class GenerationBlockInferenceModel(GenerationMixin):
             temperature,
             model_kwargs,
         ):
+            step_idx = model_kwargs["step_idx"]
             logits = paddle.cast(outputs, paddle.float32)
-            # TODO(Wanglongzhi2001): token_penalty
+
+            from paddlenlp_ops import speculate_get_token_penalty_multi_scores
+
+            speculate_get_token_penalty_multi_scores(
+                model_kwargs["pre_ids"],
+                logits,
+                penalty_score,
+                frequency_score,
+                presence_score,
+                temperature,
+                model_kwargs["bad_tokens"],
+                step_idx,
+                model_kwargs["min_dec_len"],
+                eos_token_id,
+                model_kwargs["seq_lens_this_time"],
+                model_kwargs["output_padding_offset"],
+                model_kwargs["output_cum_offsets"],
+                self.max_seq_len,
+            )
 
             # sample
             probs = F.softmax(logits)
