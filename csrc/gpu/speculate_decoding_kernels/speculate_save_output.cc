@@ -35,9 +35,9 @@ void SpeculateSaveWithOutputMsg(const paddle::Tensor& accept_tokens,
 
     int max_draft_tokens = accept_tokens.shape()[1];
 
-    auto accept_tokens_cpu = accept_tokens.copy_to(paddle::CPUPlace(), true);
-    auto accept_num_cpu = accept_num.copy_to(paddle::CPUPlace(), true);
-    auto not_need_stop_cpu = not_need_stop.copy_to(paddle::CPUPlace(), true);
+    auto accept_tokens_cpu = accept_tokens.copy_to(paddle::CPUPlace(), false);
+    auto accept_num_cpu = accept_num.copy_to(paddle::CPUPlace(), false);
+    auto not_need_stop_cpu = not_need_stop.copy_to(paddle::CPUPlace(), false);
 
     int64_t *accept_tokens_data = accept_tokens_cpu.data<int64_t>();
     int *accept_num_data = accept_num_cpu.data<int>();
