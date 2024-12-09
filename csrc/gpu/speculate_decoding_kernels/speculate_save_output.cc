@@ -24,7 +24,7 @@
 
 struct msgdata {
     long mtype;
-    int mtext[SPECULATE_MAX_BSZ * MAX_DRAFT_TOKENS + SPECULATE_MAX_BSZ + 2];   // stop_flag, bsz, tokens
+    int mtext[SPECULATE_MAX_BSZ * MAX_DRAFT_TOKENS + SPECULATE_MAX_BSZ + 2];   // stop_flag, bsz, accept_num*bsz, tokens...
 };
 
 void SpeculateSaveWithOutputMsg(const paddle::Tensor& accept_tokens,
