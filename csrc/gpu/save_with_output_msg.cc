@@ -30,7 +30,6 @@ void SaveOutMmsg(const paddle::Tensor& x,
                  const paddle::Tensor& not_need_stop,
                  int64_t rank_id) {
     if (rank_id > 0) return;
-
     auto x_cpu = x.copy_to(paddle::CPUPlace(), false);
     int64_t *x_data = x_cpu.data<int64_t>();
     auto not_need_stop_cpu = not_need_stop.copy_to(paddle::CPUPlace(), false);
@@ -44,15 +43,12 @@ void SaveOutMmsg(const paddle::Tensor& x,
     msg_sed.mtext[0] = not_need_stop_data[0] ? 1 : -1;
     int bsz = x.shape()[0];
     msg_sed.mtext[1] = bsz;
-
     for (int i = 2; i < bsz + 2; i++) {
         msg_sed.mtext[i] = (int)x_data[i - 2];
     }
-
     if ((msgsnd(msgid, &msg_sed, (MAX_BSZ + 2) * 4, 0)) == -1) {
-      printf("full msg buffer\n");
+    //   printf("full msg buffer\n");
     }
-
     return;
 }
 
