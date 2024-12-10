@@ -646,16 +646,16 @@ class GenerationBlockInferenceModel(GenerationMixin):
         model_kwargs["accept_num"] = accept_num
         model_kwargs["actual_draft_token_num"] = actual_draft_token_num
 
-        if self.config.decode_strategy == "sampling":
-            ret = self.sample(
+        if self.config.decode_strategy == "speculate_decoding":
+            ret = self.speculate_decoding(
                 eos_token_id,
                 top_k=0,
                 top_p=top_p,
                 temperature=temperature,
                 **model_kwargs,
             )
-        elif self.config.decode_strategy == "speculate_decoding":
-            ret = self.speculate_decoding(
+        else:
+            ret = self.sample(
                 eos_token_id,
                 top_k=0,
                 top_p=top_p,
