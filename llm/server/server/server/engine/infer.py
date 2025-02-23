@@ -349,6 +349,8 @@ class ModelRunner:
             if self.is_speculate_decoding:
                 self.share_inputs["draft_tokens"][idx:idx + 1] = np.zeros([self.speculate_config.speculate_max_draft_token_num + 1])
                 self.share_inputs["actual_draft_token_num"][idx:idx + 1] = np.array([self.speculate_config.speculate_max_draft_token_num])
+                if self.speculate_config.speculate_method == "inference_with_reference":
+                    self.proposer.input_ids_len[idx,0] = length
 
     def step_cuda(self, seq_lens_this_time):
         """
